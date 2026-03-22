@@ -1,1 +1,0 @@
-/usr/bin/g++ -g -fsanitize=address CMakeFiles/unit_tests.dir/smoke_test.cpp.o -o unit_tests  ../vcpkg_installed/x64-linux/debug/lib/manual-link/libgtest_main.a ../vcpkg_installed/x64-linux/debug/lib/libgtest.a 
