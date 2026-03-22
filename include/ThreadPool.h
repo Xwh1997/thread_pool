@@ -7,6 +7,7 @@
 #include <memory>
 #include <stdexcept>
 #include <type_traits>
+#include <tuple>
 
 #include "ThreadSafeQueue.h"
 
