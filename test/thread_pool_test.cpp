@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <future>
 
 // 1. 正常提交：有返回值任务在 future 上拿到正确结果
 TEST(ThreadPool, SubmitReturnsExpectedValue) {
