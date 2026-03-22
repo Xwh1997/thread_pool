@@ -1,5 +1,7 @@
 # 搜集所有源文件
-file(GLOB SOURCES "*.cpp")
+set(SOURCES
+    ThreadPool.cpp
+)
 
 # 创建静态库
 add_library(my_thread STATIC ${SOURCES})

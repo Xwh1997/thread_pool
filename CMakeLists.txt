@@ -30,7 +30,7 @@ add_subdirectory(source)
 option(BUILD_TESTING "编译单元测试" ON)
 include(CTest)
 if(BUILD_TESTING)
-  # 优先使用 vcpkg / 系统已安装的 GTest；未找到时再拉取源码（无需 CMAKE_TOOLCHAIN_FILE）
+  # 优先使用 vcpkg / 系统已安装的 GTest
   find_package(GTest CONFIG QUIET)
   add_subdirectory(test)
 endif()

@@ -1,5 +1,6 @@
+#pragma once
 #include <queue>
-#include <stddef.h>
+#include <cstddef>
 #include <mutex>
 #include <optional>
 #include <condition_variable>

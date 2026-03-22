@@ -1,8 +1,8 @@
-#include "ThreahPool.h"
+#include "ThreadPool.h"
 
 ThreadPool::ThreadPool(size_t num_threads)
 {
-    for (int i = 0; i < num_threads; ++i) {
+    for (size_t i = 0; i < num_threads; ++i) {
         workers_.emplace_back([this] {
             while (true) {
                 auto task_opt = task_queue_.wait_and_pop();
