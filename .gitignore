@@ -17,6 +17,7 @@ obj/
 build/
 out/
 dist/
+.worktrees/
 
 # --- IDE 和 编辑器特定文件 ---
 # Visual Studio
