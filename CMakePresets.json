@@ -1,0 +1,64 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PROJECTA_THREAD_POOL_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "asan-ubsan",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/asan-ubsan",
+      "cacheVariables": {
+        "PROJECTA_THREAD_POOL_ENABLE_ASAN": "ON",
+        "PROJECTA_THREAD_POOL_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "tsan",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/tsan",
+      "cacheVariables": { "PROJECTA_THREAD_POOL_ENABLE_TSAN": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "asan-ubsan", "configurePreset": "asan-ubsan" },
+    { "name": "tsan", "configurePreset": "tsan" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+    { "name": "asan-ubsan", "configurePreset": "asan-ubsan", "output": { "outputOnFailure": true } },
+    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true } }
+  ],
+  "workflowPresets": [
+    { "name": "ci-gcc", "steps": [
+      { "type": "configure", "name": "dev" },
+      { "type": "build", "name": "dev" },
+      { "type": "test", "name": "dev" }
+    ] },
+    { "name": "ci-clang-asan-ubsan", "steps": [
+      { "type": "configure", "name": "asan-ubsan" },
+      { "type": "build", "name": "asan-ubsan" },
+      { "type": "test", "name": "asan-ubsan" }
+    ] },
+    { "name": "ci-clang-tsan", "steps": [
+      { "type": "configure", "name": "tsan" },
+      { "type": "build", "name": "tsan" },
+      { "type": "test", "name": "tsan" }
+    ] }
+  ]
+}

@@ -1,60 +1,110 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.25)
 
-# vcpkg：
-# - 工具链：-DCMAKE_TOOLCHAIN_FILE=<VCPKG_ROOT>/scripts/buildsystems/vcpkg.cmake
-# - 本仓库根目录的 vcpkg.json 为 manifest 模式依赖声明（gtest）
-if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-  set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-      CACHE STRING "vcpkg toolchain")
+project(ProjectAThreadPool VERSION 2.0.0 LANGUAGES CXX)
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+find_package(Threads REQUIRED)
+
+option(PROJECTA_THREAD_POOL_BUILD_TESTS "Build ProjectA ThreadPool tests" ${PROJECT_IS_TOP_LEVEL})
+option(PROJECTA_THREAD_POOL_BUILD_BENCHMARKS "Build ProjectA ThreadPool benchmarks" OFF)
+option(PROJECTA_THREAD_POOL_FETCH_TEST_DEPS "Fetch missing test dependencies" ${PROJECT_IS_TOP_LEVEL})
+option(PROJECTA_THREAD_POOL_ENABLE_ASAN "Enable AddressSanitizer" OFF)
+option(PROJECTA_THREAD_POOL_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+option(PROJECTA_THREAD_POOL_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+option(PROJECTA_THREAD_POOL_ENABLE_COVERAGE "Enable coverage instrumentation" OFF)
+
+if(PROJECTA_THREAD_POOL_ENABLE_TSAN AND
+   (PROJECTA_THREAD_POOL_ENABLE_ASAN OR PROJECTA_THREAD_POOL_ENABLE_UBSAN))
+  message(FATAL_ERROR "TSAN cannot be combined with ASAN or UBSAN")
 endif()
 
-project(ProjectA VERSION 1.0 LANGUAGES CXX)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-option(ENABLE_ASAN "启用 AddressSanitizer（与 TSAN 互斥）" ON)
-option(ENABLE_TSAN "启用 ThreadSanitizer：数据竞争与死锁类问题由运行时报告；需配合 GTest 跑通（与 ASAN 互斥）" OFF)
-
-if(ENABLE_ASAN AND ENABLE_TSAN)
-  message(FATAL_ERROR "ENABLE_ASAN 与 ENABLE_TSAN 不能同时开启，请使用 -DENABLE_ASAN=OFF -DENABLE_TSAN=ON")
-endif()
-
-if(ENABLE_ASAN)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
-    add_link_options(-fsanitize=address)
-  elseif(MSVC)
-    add_compile_options(/fsanitize:address)
-    add_link_options(/INCREMENTAL:NO /fsanitize:address)
-  endif()
-endif()
-
-if(ENABLE_TSAN)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-    add_compile_options(-fsanitize=thread -g -O1)
-    add_link_options(-fsanitize=thread)
+function(projecta_thread_pool_apply_build_options target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /permissive-)
   else()
-    message(FATAL_ERROR "ENABLE_TSAN 目前仅支持 GCC / Clang / AppleClang（MSVC 请用其他方式做线程检测）")
+    target_compile_options(${target} PRIVATE
+      -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
   endif()
-endif()
+endfunction()
+
+function(projecta_thread_pool_apply_sanitizers target)
+  if(PROJECTA_THREAD_POOL_ENABLE_ASAN)
+    if(MSVC)
+      target_compile_options(${target} PRIVATE /fsanitize=address)
+      target_link_options(${target} PRIVATE /INCREMENTAL:NO)
+    else()
+      target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+      target_link_options(${target} PRIVATE -fsanitize=address)
+    endif()
+  endif()
+  if(PROJECTA_THREAD_POOL_ENABLE_UBSAN)
+    if(MSVC)
+      message(FATAL_ERROR "UBSAN is not supported by this project on MSVC")
+    endif()
+    target_compile_options(${target} PRIVATE -fsanitize=undefined -fno-omit-frame-pointer)
+    target_link_options(${target} PRIVATE -fsanitize=undefined)
+  endif()
+  if(PROJECTA_THREAD_POOL_ENABLE_TSAN)
+    if(MSVC)
+      message(FATAL_ERROR "TSAN is not supported by this project on MSVC")
+    endif()
+    target_compile_options(${target} PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
+    target_link_options(${target} PRIVATE -fsanitize=thread)
+  endif()
+  if(PROJECTA_THREAD_POOL_ENABLE_COVERAGE)
+    if(MSVC)
+      message(FATAL_ERROR "Coverage instrumentation is not supported by this project on MSVC")
+    endif()
+    target_compile_options(${target} PRIVATE --coverage -O0 -g)
+    target_link_options(${target} PRIVATE --coverage)
+  endif()
+endfunction()
 
 add_subdirectory(source)
 
-option(BUILD_TESTING "编译单元测试" ON)
-include(CTest)
-if(BUILD_TESTING)
+if(PROJECTA_THREAD_POOL_BUILD_TESTS)
+  include(CTest)
   find_package(GTest CONFIG QUIET)
   if(NOT GTest_FOUND)
+    if(NOT PROJECTA_THREAD_POOL_FETCH_TEST_DEPS)
+      message(FATAL_ERROR "GTest was not found and dependency fetching is disabled")
+    endif()
     include(FetchContent)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
       googletest
       GIT_REPOSITORY https://github.com/google/googletest.git
       GIT_TAG v1.14.0
     )
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
   endif()
   add_subdirectory(test)
 endif()
+
+if(PROJECTA_THREAD_POOL_BUILD_BENCHMARKS)
+  add_subdirectory(benchmark)
+endif()
+
+configure_package_config_file(
+  cmake/ProjectAThreadPoolConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/ProjectAThreadPoolConfig.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ProjectAThreadPool
+)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/ProjectAThreadPoolConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+
+install(EXPORT ProjectAThreadPoolTargets
+  FILE ProjectAThreadPoolTargets.cmake
+  NAMESPACE ProjectA::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ProjectAThreadPool
+)
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/ProjectAThreadPoolConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/ProjectAThreadPoolConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ProjectAThreadPool
+)

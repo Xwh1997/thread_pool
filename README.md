@@ -1,149 +1,95 @@
-# ProjectA
+# ProjectA ThreadPool
 
-一个用 **C++17** 写的练手小工程：实现**线程池**和**线程安全队列**，编译成静态库 **`my_thread`**，并用 **GoogleTest** 做单元测试。
+一个面向服务端通用任务的 C++20 有界线程池。v2 将过载、关闭、取消和同池等待定义为明确契约，并以 `ProjectA::thread_pool` 形式提供可安装 CMake 包。
 
-你可以把它当成「多线程基础组件」的起点，在自己的程序里链接 `my_thread` 使用线程池。
+## 特性
 
----
+- 固定 worker、中央有界 FIFO；容量只计算尚未开始的任务。
+- `submit` 立即返回，队列满时报告 `queue_full`；`submit_for` 提供显式限时背压。
+- move-only callable/参数与 typed `TaskHandle<R>`；任务异常由 `get()` 传播。
+- `Drain` 和 `CancelPending` 两种关闭模式；运行中任务可通过 `std::stop_token` 协作停止。
+- 同池 worker 阻塞等待未完成任务时 fail-fast，避免线程饥饿死锁。
+- 轻量指标和可选 Observer；ASAN/UBSAN/TSAN、安装消费测试与 benchmark。
 
-## 目录里有什么
+## 要求
 
-| 路径 | 说明 |
-|------|------|
-| `include/ThreadPool.h` | 线程池类声明与 `submit` 模板实现 |
-| `include/ThreadSafeQueue.h` | 模板化的线程安全阻塞队列 |
-| `source/ThreadPool.cpp` | 线程池构造、析构（worker 线程逻辑） |
-| `test/thread_pool_test.cpp` | GTest 用例：正常提交、异常、`submit` 嵌套、并发压测等 |
-| `CMakeLists.txt` | 根构建脚本（C++17、可选 ASAN/TSAN、测试与 GTest） |
-| `vcpkg.json` | vcpkg **清单模式**依赖：声明需要 `gtest` |
+- CMake 3.25+
+- C++20 标准库，并提供 `std::jthread`、`std::stop_source` 和 `std::stop_token`
+- GCC/libstdc++ 12+、Clang/libc++ 20+、MSVC 19.36+ 或 Xcode 26+
 
----
-
-## 你需要什么环境
-
-- **CMake 3.18 或以上**（工程里用了 GTest 的 `DISCOVERY_MODE PRE_TEST`，需要较新的 CMake 模块。）
-- 支持 **C++17** 的编译器：**GCC**、**Clang** 或 **MSVC**。
-- **单元测试依赖 GTest**，有两种来源（二选一即可）：
-  - 用 **vcpkg** 安装（见下文「方式 A」）；
-  - 不配 vcpkg 时，CMake 会通过 **FetchContent** 自动从 GitHub 拉 **googletest v1.14.0**（需要能访问外网）。
-
-说明：**Thread Sanitizer（TSAN）** 仅在 **GCC / Clang / AppleClang** 下开启；MSVC 下若打开 `ENABLE_TSAN` 会配置失败。
-
----
-
-## 怎么编译
-
-下面命令都在**项目根目录**执行。第一次会生成 `build` 目录。
-
-### 方式 A：用 vcpkg（推荐，离线/内网镜像也更可控）
-
-把 `<VCPKG_ROOT>` 换成你本机 vcpkg 的路径（例如 `~/vcpkg`）：
+## 构建与测试
 
 ```bash
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_TOOLCHAIN_FILE=<VCPKG_ROOT>/scripts/buildsystems/vcpkg.cmake
-cmake --build build -j$(nproc)
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
 ```
 
-若已设置环境变量 **`VCPKG_ROOT`**，且配置时没有手动指定工具链，根目录 `CMakeLists.txt` 会尝试自动使用 `$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake`。
-
-### 方式 B：不用 vcpkg
-
-不传 `CMAKE_TOOLCHAIN_FILE`（或在新目录里第一次配置，避免沿用上一次的 vcpkg 缓存）：
+Sanitizer 使用独立构建：
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j$(nproc)
+cmake --workflow --preset ci-clang-asan-ubsan
+cmake --workflow --preset ci-clang-tsan
 ```
 
-首次配置若找不到已安装的 GTest，会自动 **FetchContent** 下载 GoogleTest（需网络）。
-
-### 只做库、不要测试
-
-```bash
-cmake -S . -B build -DBUILD_TESTING=OFF
-cmake --build build
-```
-
----
-
-## 怎么跑测试
-
-编译成功后：
-
-```bash
-ctest --test-dir build --output-on-failure
-```
-
-也可以直接运行测试程序（路径以你生成目录为准）：
-
-```bash
-./build/test/unit_tests
-```
-
-测试代码集中在 `test/thread_pool_test.cpp`，覆盖例如：有返回值/void 任务、任务内异常通过 `future` 传出、多线程同时 `submit`、worker 里再 `submit` 并等待（容易踩死锁的场景）、大量短任务压测等。
-
----
-
-## CMake 选项速查
-
-| 选项 | 默认 | 含义 |
-|------|------|------|
-| `ENABLE_ASAN` | `ON` | 打开 **AddressSanitizer**（内存错误更易暴露）。 |
-| `ENABLE_TSAN` | `OFF` | 打开 **ThreadSanitizer**（数据竞争等；与 ASAN **不能同时开**）。 |
-| `BUILD_TESTING` | `ON` | 是否编译 `unit_tests`。 |
-
-**注意：** `ENABLE_ASAN` 与 `ENABLE_TSAN` 互斥。开 TSAN 时要关掉 ASAN，例如：
-
-```bash
-cmake -S . -B build -DENABLE_ASAN=OFF -DENABLE_TSAN=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-做 **Release / 性能** 向构建时，一般关掉 ASAN：
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_ASAN=OFF
-```
-
-### WSL2 与 TSAN、GTest 用例发现
-
-在 **WSL2** 上，若构建阶段就去执行带 TSAN 的测试程序做「用例枚举」，有时会出现 **`FATAL: ThreadSanitizer: unexpected memory mapping`**。  
-本仓库在 **`ENABLE_TSAN=ON`** 时，对 `gtest_discover_tests` 使用了 **`DISCOVERY_MODE PRE_TEST`**（见 `test/CMakeLists.txt`）：**编译链接阶段不再跑测试二进制**，改为在 **`ctest` 真正跑测时** 再发现用例，从而避开这类问题。
-
----
-
-## 最小使用示例（伪代码）
+## 使用
 
 ```cpp
-#include <ThreadPool.h>
+#include <projecta/concurrency/thread_pool.hpp>
 
-void example() {
-    ThreadPool pool(4);
-    auto future = pool.submit([](int a, int b) { return a + b; }, 1, 2);
-    int result = future.get();  // 3
+namespace pc = projecta::concurrency;
+
+int main() {
+    pc::ThreadPool pool{{.thread_count = 4, .queue_capacity = 1024}};
+    auto submitted = pool.submit([](int a, int b) { return a + b; }, 20, 22);
+    if (!submitted.has_value()) {
+        return 1;
+    }
+    return std::move(submitted).value().get() == 42 ? 0 : 2;
 }
 ```
 
-在自己的 CMake 工程里：`target_link_libraries(你的目标 PRIVATE my_thread)`，并保证能包含 `include/`（本仓库里 `my_thread` 已把该目录设为 `PUBLIC` 头文件路径）。
+限时提交与协作取消：
 
----
+```cpp
+auto task = pool.submit_for(std::chrono::milliseconds(5), [] { /* work */ });
+auto stoppable = pool.submit_stoppable([](std::stop_token token) {
+    while (!token.stop_requested()) {
+        // cooperative work
+    }
+});
+pool.shutdown(pc::ShutdownMode::cancel_pending);
+pool.wait();
+```
 
-## 常见问题
+`submit`/`submit_for` 的正常过载通过 `SubmitResult` 表达；内存分配失败仍同步抛异常。参数会 decay-copy 后以右值执行，引用参数必须显式使用 `std::ref`。
 
-1. **配置时找不到 GTest**  
-   确认是否带了 vcpkg 的 `CMAKE_TOOLCHAIN_FILE`；或检查 FetchContent 是否能访问 GitHub。
+## 安装与消费
 
-2. **开 TSAN 后构建报错、或提示 ThreadSanitizer memory mapping**  
-   使用本仓库默认的 **PRE_TEST** 配置后，应能正常 **build**；请用 **`ctest`** 跑测试。若仍异常，可查阅 Clang/GCC 文档与 WSL 相关讨论。
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release \
+  -DPROJECTA_THREAD_POOL_BUILD_TESTS=OFF
+cmake --build build/release
+cmake --install build/release --prefix /your/prefix
+```
 
-3. **想换编译器**  
-   例如：`-DCMAKE_CXX_COMPILER=g++-12`，重新在一个空 `build` 目录配置。
+下游项目：
 
----
+```cmake
+find_package(ProjectAThreadPool 2 CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE ProjectA::thread_pool)
+```
 
-## 许可证
+## 语义边界
 
-仓库内**未附带**许可证文件；若对外发布或协作，建议自行添加 `LICENSE` 并在此 README 中写明。
+- FIFO 保证取出顺序，不保证完成顺序或严格公平。
+- `CancelPending` 不强杀已经运行的普通任务；stoppable 任务必须自行响应 token。
+- 只检测直接的同池阻塞等待，不检测跨线程池依赖环。
+- 外部析构同步 Drain；自身 worker 内析构会安全转为异步 Drain。
+- 指标字段无数据竞争，但快照不承诺全字段来自同一瞬间。
+
+迁移说明见 [MIGRATION.md](MIGRATION.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+## License
+
+Apache License 2.0，见 [LICENSE](LICENSE)。
